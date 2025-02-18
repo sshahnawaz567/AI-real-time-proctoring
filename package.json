@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.21",
+    "@vladmandic/face-api": "^1.7.15",
     "cra-template": "1.2.0",
     "eslint": "^8.57.1",
     "face-api.js": "^0.22.2",

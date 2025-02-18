@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import * as faceapi from 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/+esm';
-import { PoseLandmarker, FilesetResolver, DrawingUtils, ObjectDetector } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/+esm';
+import * as faceapi from '@vladmandic/face-api';
+import { PoseLandmarker, FilesetResolver, DrawingUtils, ObjectDetector } from '@mediapipe/tasks-vision';
+
 
 function App() {
   const webcamRef = useRef(null);
@@ -27,9 +28,11 @@ function App() {
   }, []);
 
   const loadFaceAPI = async () => {
-    await faceapi.nets.ssdMobilenetv1.loadFromUri("https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/");
-    await faceapi.nets.faceLandmark68Net.loadFromUri("https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/");
-    await faceapi.nets.faceRecognitionNet.loadFromUri("https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/");
+    // Load the models from specific files in the 'face-api' folder
+    await faceapi.nets.ssdMobilenetv1.loadFromUri('/models/face-api/ssd_mobilenetv1_model-weights_manifest.json');
+    await faceapi.nets.faceLandmark68Net.loadFromUri('/models/face-api/face_landmark_68_model-weights_manifest.json');
+    await faceapi.nets.faceRecognitionNet.loadFromUri('/models/face-api/face_recognition_model-weights_manifest.json');
+
 };
 
   const initializeModels = async () => {
@@ -42,7 +45,7 @@ function App() {
         delegate: "GPU",
       },
       runningMode: "VIDEO",
-      numPoses: 2,
+      numPoses: 4,
     });
     setPoseLandmarker(poseLandmarkerInstance);
 
