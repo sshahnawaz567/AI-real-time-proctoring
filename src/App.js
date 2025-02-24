@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import Webcam from 'react-webcam';
-import * as faceapi from '@vladmandic/face-api';
+import * as faceapi from 'face-api.js';
 import { PoseLandmarker, FilesetResolver, DrawingUtils, ObjectDetector } from '@mediapipe/tasks-vision';
 
 
@@ -60,35 +60,92 @@ function App() {
     setObjectDetector(objectDetectorInstance);
   };
 
-  const captureFace = async () => {
-    if (faceCaptured) return; // Prevent multiple captures
-  
-    const isCentered = await detectPose();
-    if (!isCentered) {
+  // 
+//   
+const captureFace = async () => {
+  if (faceCaptured) return; // Prevent multiple captures
+
+  const isCentered = await detectPose();
+  if (!isCentered) {
       setHeadMovementStatus('⚠️ Align your face in the center before capturing!');
       return;
-    }
-  
-    if (webcamRef.current) {
+  }
+
+  if (webcamRef.current) {
       const video = webcamRef.current.video;
-      const detections = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options())
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-  
-      if (detections) {
-        setCapturedFace(detections.descriptor);
-        setIsFaceCaptured(true);
-        setFaceCaptured(true); // Mark face as captured
-  
-        const landmarks = detections.landmarks.positions.map(pos => ({ x: pos._x, y: pos._y }));
-        localStorage.setItem('faceLandmarks', JSON.stringify(landmarks));
-  
-        setHeadMovementStatus('✅ Face captured successfully!');
-      } else {
-        setHeadMovementStatus('❌ No face detected. Please try again.');
+
+      // Wait for brightness calculation to complete
+      const brightness = await getBrightness(video);
+      console.log("Brightness Level:", brightness); // Debugging: Check brightness value
+
+      if (brightness < 50) {
+          setHeadMovementStatus('⚠️ Low lighting detected! Try increasing brightness.');
+          return;
+      } else if (brightness > 200) {
+          setHeadMovementStatus('⚠️ Too much brightness! Move to a less illuminated area.');
+          return;
       }
-    }
-  };
+
+      const detections = await faceapi.detectSingleFace(video, new faceapi.SsdMobilenetv1Options())
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+      if (detections) {
+          setCapturedFace(detections.descriptor);
+          setIsFaceCaptured(true);
+          setFaceCaptured(true);
+
+          const landmarks = detections.landmarks?.positions?.map(pos => ({ x: pos._x, y: pos._y })) || [];
+          localStorage.setItem('faceLandmarks', JSON.stringify(landmarks));
+
+          setHeadMovementStatus('✅ Face captured successfully!');
+      } else {
+          // Handle failure scenarios with meaningful messages
+          if (brightness < 70) {
+              setHeadMovementStatus('⚠️ Face not detected! Try improving lighting.');
+          } else if (!isCentered) {
+              setHeadMovementStatus('⚠️ Face not centered. Please align properly.');
+          } else {
+              setHeadMovementStatus('❌ Face not detected! Ensure your face is visible and clear.');
+          }
+      }
+  }
+};
+
+// Updated getBrightness function to ensure reliable brightness measurement
+const getBrightness = async (video) => {
+    return new Promise((resolve) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true }); // Avoid performance issues
+
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        try {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            let totalBrightness = 0;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                const brightness = (r + g + b) / 3; // Calculate average brightness
+                totalBrightness += brightness;
+            }
+
+            const avgBrightness = totalBrightness / (data.length / 4);
+            resolve(avgBrightness); // Return calculated brightness
+        } catch (error) {
+            console.error("Error getting brightness:", error);
+            resolve(100); // Assume good lighting in case of error
+        }
+    });
+};
+
+
 
   const verifyFace = async () => { 
     if (!capturedFace || !webcamRef.current || !webcamRef.current.video) {
@@ -216,8 +273,8 @@ const detectPose = async () => {
         horizontalMovement = Math.abs(nose.x - referenceNose.x);
         verticalMovement = Math.abs(nose.y - referenceNose.y);
 
-        drawingUtils.drawLandmarks(landmark, { radius: 5 });
-        drawingUtils.drawConnectors(landmark, PoseLandmarker.POSE_CONNECTIONS);
+        // drawingUtils.drawLandmarks(landmark, { radius: 5 });
+        // drawingUtils.drawConnectors(landmark, PoseLandmarker.POSE_CONNECTIONS);
       });
     }
 
@@ -243,11 +300,13 @@ const detectObjects = async () => {
 
     const notAllowedClasses = ['cell phone', 'tablet', 'book', 'remote', 'backpack', 'mouse', 'tv', 'keyboard', 'laptop'];
 
-    const detectedObjects = detectionResult.detections.filter(detection =>
-      notAllowedClasses.includes(detection.categories[0]?.categoryName.toLowerCase())
-    );
+    // Extract detected object names
+    const detectedObjects = detectionResult.detections
+      .map(detection => detection.categories[0]?.categoryName.toLowerCase())
+      .filter(objectName => notAllowedClasses.includes(objectName));
 
-    setDetectedNotAllowedObjects(detectedObjects.length > 0);
+    // Store detected objects in state
+    setDetectedNotAllowedObjects(detectedObjects);
   }
 };
 
@@ -256,7 +315,9 @@ const getHighestPriorityWarning = () => {
   if (multiplePeopleDetected) return '🚨 Critical Warning: More than one person detected!';
   if (unauthorizedPerson) return '🚨 Warning: Unauthorized person detected!';
   if (!faceDetected) return '⚠️ Warning: No face detected!';
-  if (detectedNotAllowedObjects) return '🚨 Object Not Allowed! Please remove it.';
+  if (detectedNotAllowedObjects.length > 0) {
+    return `🚨 ${detectedNotAllowedObjects.join(', ')} detected! Please remove it.`;
+  }
   if (horizontalMovement > 0.02 || verticalMovement > 0.02) return '⚠️ Head movement detected!';
   return ''; // No warnings
 };
